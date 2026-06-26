@@ -43,8 +43,8 @@ const {
   scanBundleInstallSourceRuntime,
 } = await import("./install-security-scan.runtime.js");
 
-function expectPolicySurfacesSkipped() {
-  expect(runInstallPolicyMock).not.toHaveBeenCalled();
+function expectOnlyOperatorPolicyRan() {
+  expect(runInstallPolicyMock).toHaveBeenCalledTimes(1);
   expect(findBlockedManifestDependenciesMock).not.toHaveBeenCalled();
   expect(findBlockedNodeModulesDirectoryMock).not.toHaveBeenCalled();
   expect(findBlockedNodeModulesFileAliasMock).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe("install security scan official bypass", () => {
     });
 
     expect(result).toBeUndefined();
-    expectPolicySurfacesSkipped();
+    expectOnlyOperatorPolicyRan();
   });
 
   it("bypasses plugin install friction for official ClawHub sources", async () => {
@@ -85,7 +85,7 @@ describe("install security scan official bypass", () => {
     });
 
     expect(result).toBeUndefined();
-    expectPolicySurfacesSkipped();
+    expectOnlyOperatorPolicyRan();
   });
 
   it("bypasses skill install friction for bundled OpenClaw sources", async () => {
@@ -103,10 +103,10 @@ describe("install security scan official bypass", () => {
     });
 
     expect(result).toBeUndefined();
-    expectPolicySurfacesSkipped();
+    expectOnlyOperatorPolicyRan();
   });
 
-  it("bypasses npm install friction for official immutable sources", async () => {
+  it("runs only operator policy for official immutable npm sources", async () => {
     const result = await preflightPluginNpmInstallPolicyRuntime({
       logger: {},
       packageName: "@openclaw/matrix",
@@ -117,7 +117,31 @@ describe("install security scan official bypass", () => {
     });
 
     expect(result).toBeUndefined();
-    expectPolicySurfacesSkipped();
+    expectOnlyOperatorPolicyRan();
+  });
+
+  it("lets operator policy block official sources", async () => {
+    runInstallPolicyMock.mockResolvedValueOnce({
+      blocked: {
+        code: "security_scan_blocked",
+        reason: "blocked by operator policy",
+      },
+    });
+
+    const result = await scanBundleInstallSourceRuntime({
+      logger: {},
+      pluginId: "@openclaw/matrix",
+      sourceDir: "/tmp/openclaw-official-clawhub-plugin",
+      source: { kind: "clawhub", authority: "official", mutable: false, network: true },
+    });
+
+    expect(result).toEqual({
+      blocked: {
+        code: "security_scan_blocked",
+        reason: "blocked by operator policy",
+      },
+    });
+    expectOnlyOperatorPolicyRan();
   });
 
   it("still runs install policy for mutable workspace skill sources", async () => {
