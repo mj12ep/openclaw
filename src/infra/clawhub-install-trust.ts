@@ -101,6 +101,7 @@ const CLAWHUB_NON_RISK_REASONS = new Set([
   "scan:stale",
   "stale_scan",
 ]);
+const CLAWHUB_NON_SECURITY_SKILL_VERIFY_REASONS = new Set(["card.missing", "card_missing"]);
 const CLAWHUB_EVIDENCE_LABEL_WIDTH = 15;
 const CLAWHUB_RAW_LINK_LABEL_WIDTH = 16;
 
@@ -778,6 +779,7 @@ function readOptionalNumberField(value: unknown, field: string): number | undefi
 
 function mapSkillVerificationSecurityForVerdict(
   verification: ClawHubSkillVerificationResponse,
+  opts?: { allowCleanCardOnlyPass?: boolean },
 ): unknown {
   const security = readObject(verification.security);
   if (!security || Object.hasOwn(security, "passed")) {
@@ -785,12 +787,23 @@ function mapSkillVerificationSecurityForVerdict(
   }
   const status =
     normalizeOptionalString(security.status) ?? normalizeOptionalString(security.rawStatus);
-  if (!status || !verification.ok || normalizeClawHubTrustToken(verification.decision) !== "pass") {
+  const decisionPass =
+    verification.ok && normalizeClawHubTrustToken(verification.decision) === "pass";
+  if (!status || (!decisionPass && opts?.allowCleanCardOnlyPass !== true)) {
     return verification.security;
   }
   // The owner-qualified fallback uses the older verify endpoint, whose pass
   // decision plus concrete status predates the batched verdict `passed` flag.
   return { ...security, passed: true };
+}
+
+function hasOnlyNonSecuritySkillVerifyReasons(reasons: readonly string[]): boolean {
+  return (
+    reasons.length > 0 &&
+    reasons.every((reason) =>
+      CLAWHUB_NON_SECURITY_SKILL_VERIFY_REASONS.has(normalizeClawHubTrustToken(reason)),
+    )
+  );
 }
 
 function isOwnerQualifiedSkillNotFoundVerdict(item: ClawHubSkillSecurityVerdictItem): boolean {
@@ -807,10 +820,21 @@ function mapSkillVerificationToSecurityVerdictItem(params: {
   const publisher = readObject(params.verification.publisher);
   const versionRecord = readObject(params.verification.version);
   const pageUrl = normalizeOptionalString(params.verification.pageUrl);
+  const reasons = params.verification.reasons
+    .map((reason) => normalizeOptionalString(reason))
+    .filter((reason): reason is string => Boolean(reason));
+  const securityStatus = normalizeClawHubTrustToken(
+    readOptionalStringField(params.verification.security, "status") ??
+      readOptionalStringField(params.verification.security, "rawStatus"),
+  );
+  const cardOnlyCleanFailure =
+    !params.verification.ok &&
+    securityStatus === "clean" &&
+    hasOnlyNonSecuritySkillVerifyReasons(reasons);
   return {
-    ok: params.verification.ok,
-    decision: params.verification.decision,
-    reasons: params.verification.reasons,
+    ok: cardOnlyCleanFailure ? true : params.verification.ok,
+    decision: cardOnlyCleanFailure ? "pass" : params.verification.decision,
+    reasons: cardOnlyCleanFailure ? [] : reasons,
     requestedSlug: params.slug,
     requestedVersion: params.version,
     slug:
@@ -838,7 +862,9 @@ function mapSkillVerificationToSecurityVerdictItem(params: {
           securityAuditUrl: `${pageUrl}/security-audit?version=${encodeURIComponent(params.version)}`,
         }
       : {}),
-    security: mapSkillVerificationSecurityForVerdict(params.verification),
+    security: mapSkillVerificationSecurityForVerdict(params.verification, {
+      allowCleanCardOnlyPass: cardOnlyCleanFailure,
+    }),
   };
 }
 

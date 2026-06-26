@@ -897,6 +897,67 @@ describe("skills-clawhub", () => {
     });
   });
 
+  it("does not require acknowledgement for owner-qualified clean skills missing only cards", async () => {
+    const workspaceDir = await tempDirs.make("openclaw-owner-card-missing-");
+    fetchClawHubSkillSecurityVerdictsMock.mockResolvedValueOnce({
+      schema: "clawhub.skill.security-verdicts.v1",
+      items: [
+        {
+          ok: false,
+          decision: "fail",
+          reasons: ["skill.not_found"],
+          requestedSlug: "weather",
+          requestedVersion: "1.0.0",
+          slug: "weather",
+          version: null,
+          security: null,
+          error: {
+            code: "skill_not_found",
+            message: "Skill not found",
+          },
+        },
+      ],
+    });
+    fetchClawHubSkillVerificationMock.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: false,
+      decision: "fail",
+      reasons: ["card.missing"],
+      slug: "weather",
+      displayName: "Weather",
+      pageUrl: "https://clawhub.ai/demo-owner/skills/weather",
+      publisherHandle: "demo-owner",
+      publisherDisplayName: "Demo Owner",
+      version: "1.0.0",
+      createdAt: 123,
+      card: { available: false },
+      artifact: { sourceFingerprint: "source-fp" },
+      provenance: { source: "unavailable" },
+      security: { status: "clean" },
+      signature: { status: "unsigned" },
+    });
+    const onClawHubRisk = vi.fn(async () => false);
+    installPackageDirMock.mockImplementationOnce(async (params: { targetDir: string }) => {
+      await fs.mkdir(params.targetDir, { recursive: true });
+      await fs.writeFile(path.join(params.targetDir, "SKILL.md"), "# Weather\n", "utf8");
+      return { ok: true, targetDir: params.targetDir };
+    });
+
+    const result = await installSkillFromClawHub({
+      workspaceDir,
+      slug: "@demo-owner/weather",
+      onClawHubRisk,
+    });
+
+    expectInstalledSkill(result, {
+      slug: "weather",
+      version: "1.0.0",
+      targetDir: path.join(workspaceDir, "skills", "weather"),
+    });
+    expect(onClawHubRisk).not.toHaveBeenCalled();
+    expect(downloadClawHubSkillArchiveUrlMock).toHaveBeenCalled();
+  });
+
   it("formats ambiguous ClawHub slug responses with owner-qualified guidance", async () => {
     fetchClawHubSkillInstallResolutionMock.mockResolvedValueOnce({
       ok: false,
