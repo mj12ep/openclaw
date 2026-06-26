@@ -831,6 +831,9 @@ function mapSkillVerificationToSecurityVerdictItem(params: {
     !params.verification.ok &&
     securityStatus === "clean" &&
     hasOnlyNonSecuritySkillVerifyReasons(reasons);
+  const verifiedVersion =
+    normalizeOptionalString(params.verification.version) ??
+    readOptionalStringField(versionRecord, "version");
   return {
     ok: cardOnlyCleanFailure ? true : params.verification.ok,
     decision: cardOnlyCleanFailure ? "pass" : params.verification.decision,
@@ -839,10 +842,7 @@ function mapSkillVerificationToSecurityVerdictItem(params: {
     requestedVersion: params.version,
     slug:
       normalizeOptionalString(params.verification.slug) ?? readOptionalStringField(skill, "slug"),
-    version:
-      normalizeOptionalString(params.verification.version) ??
-      readOptionalStringField(versionRecord, "version") ??
-      params.version,
+    version: verifiedVersion ?? (cardOnlyCleanFailure ? params.version : null),
     displayName:
       normalizeOptionalString(params.verification.displayName) ??
       readOptionalStringField(skill, "displayName"),

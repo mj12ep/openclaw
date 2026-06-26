@@ -958,6 +958,61 @@ describe("skills-clawhub", () => {
     expect(downloadClawHubSkillArchiveUrlMock).toHaveBeenCalled();
   });
 
+  it("does not let owner-qualified fallback acknowledgement mask missing exact versions", async () => {
+    fetchClawHubSkillSecurityVerdictsMock.mockResolvedValueOnce({
+      schema: "clawhub.skill.security-verdicts.v1",
+      items: [
+        {
+          ok: false,
+          decision: "fail",
+          reasons: ["skill.not_found"],
+          requestedSlug: "weather",
+          requestedVersion: "1.0.0",
+          slug: "weather",
+          version: null,
+          security: null,
+          error: {
+            code: "skill_not_found",
+            message: "Skill not found",
+          },
+        },
+      ],
+    });
+    fetchClawHubSkillVerificationMock.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: false,
+      decision: "fail",
+      reasons: ["version.not_found"],
+      slug: "weather",
+      displayName: "Weather",
+      pageUrl: "https://clawhub.ai/demo-owner/skills/weather",
+      publisherHandle: "demo-owner",
+      publisherDisplayName: "Demo Owner",
+      version: null,
+      createdAt: 123,
+      card: { available: true, sha256: "card-sha" },
+      artifact: { sourceFingerprint: "source-fp" },
+      provenance: { source: "unavailable" },
+      security: { status: "clean" },
+      signature: { status: "unsigned" },
+    });
+
+    const result = await installSkillFromClawHub({
+      workspaceDir: "/tmp/workspace",
+      slug: "@demo-owner/weather",
+      acknowledgeClawHubRisk: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected owner-qualified missing version failure");
+    }
+    expect(result.code).toBe("clawhub_security_unavailable");
+    expect(result.error).toContain('returned version "unknown"');
+    expect(downloadClawHubSkillArchiveUrlMock).not.toHaveBeenCalled();
+    expect(downloadClawHubSkillArchiveMock).not.toHaveBeenCalled();
+  });
+
   it("formats ambiguous ClawHub slug responses with owner-qualified guidance", async () => {
     fetchClawHubSkillInstallResolutionMock.mockResolvedValueOnce({
       ok: false,
